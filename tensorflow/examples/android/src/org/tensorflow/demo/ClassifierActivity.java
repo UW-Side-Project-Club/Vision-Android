@@ -23,12 +23,18 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.media.ImageReader.OnImageAvailableListener;
+import android.os.Bundle;
 import android.os.SystemClock;
+import android.speech.tts.TextToSpeech;
 import android.util.Size;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Surface;
+import android.view.View;
+import android.widget.Button;
+
 import java.util.List;
+import java.util.Locale;
 import java.util.Vector;
 import org.tensorflow.demo.OverlayView.DrawCallback;
 import org.tensorflow.demo.env.BorderedText;
@@ -74,7 +80,7 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
 
   private static final String MODEL_FILE = "file:///android_asset/tensorflow_inception_graph.pb";
   private static final String LABEL_FILE =
-      "file:///android_asset/imagenet_comp_graph_label_strings.txt";
+          "file:///android_asset/imagenet_comp_graph_label_strings.txt";
 
 
   private static final boolean MAINTAIN_ASPECT = true;
@@ -90,6 +96,35 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
 
   private BorderedText borderedText;
 
+  // Text-to-speech added by Tony
+  private TextToSpeech t2s;
+  private Button btnSpeak;
+  private CharSequence lastResult;
+
+  @Override
+  protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    t2s = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+      @Override
+      public void onInit(int status) {
+        if (status != TextToSpeech.ERROR) {
+          t2s.setLanguage(Locale.US);
+        }
+      }
+    });
+  }
+
+
+
+  @Override
+  public synchronized void onPause() {
+    super.onPause();
+
+    if (t2s != null) {
+      t2s.stop();
+      t2s.shutdown();
+    }
+  }
 
   @Override
   protected int getLayoutId() {
@@ -106,20 +141,20 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
   @Override
   public void onPreviewSizeChosen(final Size size, final int rotation) {
     final float textSizePx = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, TEXT_SIZE_DIP, getResources().getDisplayMetrics());
+            TypedValue.COMPLEX_UNIT_DIP, TEXT_SIZE_DIP, getResources().getDisplayMetrics());
     borderedText = new BorderedText(textSizePx);
     borderedText.setTypeface(Typeface.MONOSPACE);
 
     classifier =
-        TensorFlowImageClassifier.create(
-            getAssets(),
-            MODEL_FILE,
-            LABEL_FILE,
-            INPUT_SIZE,
-            IMAGE_MEAN,
-            IMAGE_STD,
-            INPUT_NAME,
-            OUTPUT_NAME);
+            TensorFlowImageClassifier.create(
+                    getAssets(),
+                    MODEL_FILE,
+                    LABEL_FILE,
+                    INPUT_SIZE,
+                    IMAGE_MEAN,
+                    IMAGE_STD,
+                    INPUT_NAME,
+                    OUTPUT_NAME);
 
     previewWidth = size.getWidth();
     previewHeight = size.getHeight();
@@ -132,20 +167,20 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
     croppedBitmap = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Config.ARGB_8888);
 
     frameToCropTransform = ImageUtils.getTransformationMatrix(
-        previewWidth, previewHeight,
-        INPUT_SIZE, INPUT_SIZE,
-        sensorOrientation, MAINTAIN_ASPECT);
+            previewWidth, previewHeight,
+            INPUT_SIZE, INPUT_SIZE,
+            sensorOrientation, MAINTAIN_ASPECT);
 
     cropToFrameTransform = new Matrix();
     frameToCropTransform.invert(cropToFrameTransform);
 
     addCallback(
-        new DrawCallback() {
-          @Override
-          public void drawCallback(final Canvas canvas) {
-            renderDebug(canvas);
-          }
-        });
+            new DrawCallback() {
+              @Override
+              public void drawCallback(final Canvas canvas) {
+                renderDebug(canvas);
+              }
+            });
   }
 
   @Override
@@ -159,22 +194,44 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
       ImageUtils.saveBitmap(croppedBitmap);
     }
     runInBackground(
-        new Runnable() {
-          @Override
-          public void run() {
-            final long startTime = SystemClock.uptimeMillis();
-            final List<Classifier.Recognition> results = classifier.recognizeImage(croppedBitmap);
-            lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
-            LOGGER.i("Detect: %s", results);
-            cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
-            if (resultsView == null) {
-              resultsView = (ResultsView) findViewById(R.id.results);
-            }
-            resultsView.setResults(results);
-            requestRender();
-            readyForNextImage();
-          }
-        });
+            new Runnable() {
+              @Override
+              public void run() {
+                final long startTime = SystemClock.uptimeMillis();
+                final List<Classifier.Recognition> results = classifier.recognizeImage(croppedBitmap);
+                // Speaking the object out loud
+                if (results != null && results.size() > 0) {
+                  lastResult = String.format("I am %d percent confident that I am seeing %s", Math.round(results.get(0).getConfidence()*100), results.get(0).getTitle());
+                }
+                lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
+                LOGGER.i("Detect: %s", results);
+                cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
+                if (btnSpeak == null) {
+                  btnSpeak = (Button) findViewById(R.id.btn_speak);
+                  btnSpeak.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                      if (lastResult != null) {
+                        runInBackground(new Runnable() {
+                          @Override
+                          public void run() {
+                            if (t2s != null) {
+                              t2s.speak(lastResult, TextToSpeech.QUEUE_FLUSH, null, null);
+                            }
+                          }
+                        });
+                      }
+                    }
+                  });
+                }
+                if (resultsView == null) {
+                  resultsView = (ResultsView) findViewById(R.id.results);
+                }
+                resultsView.setResults(results);
+                requestRender();
+                readyForNextImage();
+              }
+            });
   }
 
   @Override
@@ -192,8 +249,8 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
       final float scaleFactor = 2;
       matrix.postScale(scaleFactor, scaleFactor);
       matrix.postTranslate(
-          canvas.getWidth() - copy.getWidth() * scaleFactor,
-          canvas.getHeight() - copy.getHeight() * scaleFactor);
+              canvas.getWidth() - copy.getWidth() * scaleFactor,
+              canvas.getHeight() - copy.getHeight() * scaleFactor);
       canvas.drawBitmap(copy, matrix, new Paint());
 
       final Vector<String> lines = new Vector<String>();
