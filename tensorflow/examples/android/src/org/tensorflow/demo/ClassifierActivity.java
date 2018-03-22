@@ -32,10 +32,12 @@ import android.view.Display;
 import android.view.Surface;
 import android.view.View;
 import android.widget.Button;
+import android.media.AudioManager;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.Vector;
+
 import org.tensorflow.demo.OverlayView.DrawCallback;
 import org.tensorflow.demo.env.BorderedText;
 import org.tensorflow.demo.env.ImageUtils;
@@ -46,8 +48,6 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
   private static final Logger LOGGER = new Logger();
 
   protected static final boolean SAVE_PREVIEW_BITMAP = false;
-
-  private ResultsView resultsView;
 
   private Bitmap rgbFrameBitmap = null;
   private Bitmap croppedBitmap = null;
@@ -85,14 +85,12 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
 
   private static final boolean MAINTAIN_ASPECT = true;
 
-  private static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
-
+  private static final Size DESIRED_PREVIEW_SIZE = new Size(1920, 1080);
 
   private Integer sensorOrientation;
   private Classifier classifier;
   private Matrix frameToCropTransform;
   private Matrix cropToFrameTransform;
-
 
   private BorderedText borderedText;
 
@@ -104,6 +102,7 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    this.setVolumeControlStream(AudioManager.STREAM_MUSIC);
     t2s = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
       @Override
       public void onInit(int status) {
@@ -211,7 +210,7 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
                   btnSpeak.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View view) {
-                      if (lastResult != null) {
+                      if (lastResult != null && !t2s.isSpeaking()) {
                         runInBackground(new Runnable() {
                           @Override
                           public void run() {
@@ -224,10 +223,6 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
                     }
                   });
                 }
-                if (resultsView == null) {
-                  resultsView = (ResultsView) findViewById(R.id.results);
-                }
-                resultsView.setResults(results);
                 requestRender();
                 readyForNextImage();
               }
@@ -270,5 +265,15 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
 
       borderedText.drawLines(canvas, 10, canvas.getHeight() - 10, lines);
     }
+  }
+
+  @Override
+  public void onDestroy() {
+    //Close the Text to Speech Library
+    if(t2s != null) {
+      t2s.stop();
+      t2s.shutdown();
+    }
+    super.onDestroy();
   }
 }

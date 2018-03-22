@@ -361,6 +361,7 @@ public abstract class CameraActivity extends Activity
                 public void onPreviewSizeChosen(final Size size, final int rotation) {
                   previewHeight = size.getHeight();
                   previewWidth = size.getWidth();
+                  LOGGER.i("PREVIEW %d %d", previewHeight, previewWidth);
                   CameraActivity.this.onPreviewSizeChosen(size, rotation);
                 }
               },
